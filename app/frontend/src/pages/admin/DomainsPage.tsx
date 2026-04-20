@@ -318,8 +318,8 @@ function DeleteDomainDialog({
         <p className="text-zinc-400 text-sm">
           Delete{" "}
           <span className="text-zinc-200 font-medium">{domain?.name}</span>?
-          All associated email accounts and forwards will also be removed. This
-          cannot be undone.
+          This removes the domain from this app only — mailboxes and forwards
+          on cyon are not affected. This cannot be undone.
         </p>
         <DialogFooter>
           <Button
