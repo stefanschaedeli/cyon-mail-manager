@@ -1,18 +1,15 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronLeft, Plus, Trash2, Copy, Check, RefreshCw, Download } from "lucide-react";
+import { ChevronLeft, Plus, Trash2, Copy, Check, RefreshCw, Download, Search, X, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import {
   fetchEmails,
   createEmail,
   deleteEmail,
-  fetchForwards,
-  createForward,
-  deleteForward,
   importEmails,
-  importForwards,
 } from "@/lib/api";
+import { ForwardsTab } from "@/components/forwards/ForwardsTab";
 import { generatePassword } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,8 +31,50 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Domain, EmailAccount, EmailForward } from "@/types";
+import type { Domain, EmailAccount } from "@/types";
 import { fetchDomains } from "@/lib/api";
+
+// ── Sort helpers ──────────────────────────────────────────────────────────────
+
+type SortDir = "asc" | "desc" | null;
+
+function SortableHeader({
+  col,
+  label,
+  sortCol,
+  sortDir,
+  onSort,
+  className,
+}: {
+  col: string;
+  label: string;
+  sortCol: string | null;
+  sortDir: SortDir;
+  onSort: (col: string) => void;
+  className?: string;
+}) {
+  const active = sortCol === col;
+  return (
+    <TableHead
+      className={`text-zinc-400 cursor-pointer select-none hover:text-zinc-200 ${className ?? ""}`}
+      onClick={() => onSort(col)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active && sortDir === "asc" && <ChevronUp className="h-3.5 w-3.5" />}
+        {active && sortDir === "desc" && <ChevronDown className="h-3.5 w-3.5" />}
+        {!active && <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" />}
+      </span>
+    </TableHead>
+  );
+}
+
+function cmpNum(a: number | null, b: number | null, dir: "asc" | "desc"): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return dir === "asc" ? a - b : b - a;
+}
 
 // ── Synced dot ────────────────────────────────────────────────────────────────
 
@@ -345,224 +384,6 @@ function DeleteEmailDialog({
   );
 }
 
-// ── New Forward dialog ────────────────────────────────────────────────────────
-
-function NewForwardDialog({
-  domain,
-  open,
-  onOpenChange,
-}: {
-  domain: Domain;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [sourceLocal, setSourceLocal] = useState("");
-  const [destination, setDestination] = useState("");
-  const [sourceError, setSourceError] = useState("");
-  const [destError, setDestError] = useState("");
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      createForward(domain.name, {
-        source_local: sourceLocal,
-        destination,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["domains", domain.name, "forwards"],
-      });
-      toast.success(`Forward from ${sourceLocal}@${domain.name} created`);
-      onOpenChange(false);
-      resetForm();
-    },
-    onError: (err: { response?: { status: number; data?: { detail?: string } } }) => {
-      const status = err.response?.status;
-      if (status === 409) {
-        toast.error("Forward already exists");
-      } else {
-        toast.error("Failed to create forward. Please try again.");
-      }
-    },
-  });
-
-  function resetForm() {
-    setSourceLocal("");
-    setDestination("");
-    setSourceError("");
-    setDestError("");
-  }
-
-  function handleClose() {
-    onOpenChange(false);
-    resetForm();
-  }
-
-  function validateSource(value: string) {
-    if (!/^[a-zA-Z0-9._%+-]+$/.test(value)) {
-      setSourceError("Only letters, numbers, and . _ % + - are allowed");
-    } else {
-      setSourceError("");
-    }
-  }
-
-  function validateDest(value: string) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-      setDestError("Please enter a valid email address");
-    } else {
-      setDestError("");
-    }
-  }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (sourceError || destError || !sourceLocal || !destination) return;
-    mutation.mutate();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100">
-        <DialogHeader>
-          <DialogTitle>New Forward</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-zinc-300">Source address</Label>
-            <div className="flex items-center">
-              <Input
-                value={sourceLocal}
-                onChange={(e) => {
-                  setSourceLocal(e.target.value);
-                  if (e.target.value) validateSource(e.target.value);
-                  else setSourceError("");
-                }}
-                placeholder="username"
-                required
-                className="rounded-r-none bg-zinc-800 border-zinc-700 text-zinc-100 focus-visible:ring-zinc-500"
-              />
-              <span className="inline-flex items-center px-3 h-9 rounded-r-md border border-l-0 border-zinc-700 bg-zinc-700/50 text-zinc-400 text-sm whitespace-nowrap">
-                @{domain.name}
-              </span>
-            </div>
-            {sourceError && (
-              <p className="text-xs text-red-400">{sourceError}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-zinc-300">Destination email</Label>
-            <Input
-              type="email"
-              value={destination}
-              onChange={(e) => {
-                setDestination(e.target.value);
-                if (e.target.value) validateDest(e.target.value);
-                else setDestError("");
-              }}
-              placeholder="user@example.com"
-              required
-              className="bg-zinc-800 border-zinc-700 text-zinc-100 focus-visible:ring-zinc-500"
-            />
-            {destError && (
-              <p className="text-xs text-red-400">{destError}</p>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleClose}
-              className="border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={
-                mutation.isPending ||
-                !sourceLocal ||
-                !destination ||
-                !!sourceError ||
-                !!destError
-              }
-              className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-            >
-              {mutation.isPending ? "Creating…" : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ── Delete Forward dialog ─────────────────────────────────────────────────────
-
-function DeleteForwardDialog({
-  domainName,
-  forward,
-  open,
-  onOpenChange,
-}: {
-  domainName: string;
-  forward: EmailForward | null;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-}) {
-  const queryClient = useQueryClient();
-
-  const mutation = useMutation({
-    mutationFn: () => deleteForward(domainName, forward!.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["domains", domainName, "forwards"],
-      });
-      toast.success(`Forward deleted`);
-      onOpenChange(false);
-    },
-    onError: () => {
-      toast.error("Failed to delete forward. Please try again.");
-    },
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100">
-        <DialogHeader>
-          <DialogTitle>Delete forward?</DialogTitle>
-        </DialogHeader>
-        <p className="text-zinc-400 text-sm">
-          This will permanently delete the forward from{" "}
-          <span className="text-zinc-200 font-medium">{forward?.source}</span>{" "}
-          to{" "}
-          <span className="text-zinc-200 font-medium">
-            {forward?.destination}
-          </span>
-          . This action cannot be undone.
-        </p>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            className="border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={() => mutation.mutate()}
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending ? "Deleting…" : "Delete"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ── Import from cyon button ───────────────────────────────────────────────────
 
 function ImportButton({
@@ -605,10 +426,54 @@ function EmailsTab({ domain }: { domain: Domain }) {
   const [deleteTarget, setDeleteTarget] = useState<EmailAccount | null>(null);
   const queryClient = useQueryClient();
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+
+  function handleSort(col: string) {
+    if (sortCol !== col) {
+      setSortCol(col);
+      setSortDir("asc");
+    } else if (sortDir === "asc") {
+      setSortDir("desc");
+    } else {
+      setSortCol(null);
+      setSortDir(null);
+    }
+  }
+
   const { data: emails, isLoading } = useQuery({
     queryKey: ["domains", domain.name, "emails"],
     queryFn: () => fetchEmails(domain.name),
   });
+
+  const filtered = useMemo(() => {
+    if (!emails) return [];
+    const q = searchQuery.trim().toLowerCase();
+    let result = q
+      ? emails.filter((e) => e.address.toLowerCase().includes(q))
+      : [...emails];
+
+    if (sortCol && sortDir) {
+      result.sort((a, b) => {
+        if (sortCol === "address") {
+          const cmp = a.address.localeCompare(b.address);
+          return sortDir === "asc" ? cmp : -cmp;
+        }
+        if (sortCol === "quota") {
+          const av = a.quota_mb === 0 ? null : a.quota_mb;
+          const bv = b.quota_mb === 0 ? null : b.quota_mb;
+          return cmpNum(av, bv, sortDir);
+        }
+        if (sortCol === "used") return cmpNum(a.disk_used_mb, b.disk_used_mb, sortDir);
+        if (sortCol === "messages") return cmpNum(a.message_count, b.message_count, sortDir);
+        // created
+        const cmp = a.created_at.localeCompare(b.created_at);
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+    return result;
+  }, [emails, searchQuery, sortCol, sortDir]);
 
   return (
     <div className="space-y-4">
@@ -623,6 +488,23 @@ function EmailsTab({ domain }: { domain: Domain }) {
           />
         )}
         <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search…"
+              className="pl-8 pr-7 h-8 w-48 bg-zinc-800 border-zinc-700 text-zinc-100 text-sm focus-visible:ring-zinc-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
           <ImportButton
             label="emails"
             onImport={() => importEmails(domain.name)}
@@ -654,19 +536,22 @@ function EmailsTab({ domain }: { domain: Domain }) {
             <Skeleton key={i} className="h-12 bg-zinc-800 rounded" />
           ))}
         </div>
-      ) : emails && emails.length > 0 ? (
+      ) : filtered.length > 0 ? (
         <div className="rounded-md border border-zinc-800">
           <Table>
             <TableHeader>
               <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="text-zinc-400">Address</TableHead>
-                <TableHead className="text-zinc-400">Quota (MB)</TableHead>
+                <SortableHeader col="address" label="Address" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader col="quota" label="Quota (MB)" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader col="used" label="Used (MB)" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader col="messages" label="Messages" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader col="created" label="Created" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <TableHead className="text-zinc-400">Synced</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {emails.map((email) => (
+              {filtered.map((email) => (
                 <TableRow
                   key={email.id}
                   className="border-zinc-800 hover:bg-zinc-800/50"
@@ -675,7 +560,16 @@ function EmailsTab({ domain }: { domain: Domain }) {
                     {email.address}
                   </TableCell>
                   <TableCell className="text-zinc-400">
-                    {email.quota_mb}
+                    {email.quota_mb > 0 ? email.quota_mb : "—"}
+                  </TableCell>
+                  <TableCell className="text-zinc-400">
+                    {email.disk_used_mb !== null ? email.disk_used_mb!.toFixed(1) : "—"}
+                  </TableCell>
+                  <TableCell className="text-zinc-400">
+                    {email.message_count !== null ? email.message_count : "—"}
+                  </TableCell>
+                  <TableCell className="text-zinc-400 text-sm">
+                    {email.created_at.slice(0, 10)}
                   </TableCell>
                   <TableCell>
                     <SyncedDot synced={email.synced} />
@@ -695,6 +589,10 @@ function EmailsTab({ domain }: { domain: Domain }) {
             </TableBody>
           </Table>
         </div>
+      ) : searchQuery ? (
+        <p className="text-center text-zinc-500 py-8">
+          No results for «{searchQuery}»
+        </p>
       ) : (
         <p className="text-center text-zinc-500 py-8">
           No email accounts yet.
@@ -709,122 +607,6 @@ function EmailsTab({ domain }: { domain: Domain }) {
       <DeleteEmailDialog
         domainName={domain.name}
         email={deleteTarget}
-        open={!!deleteTarget}
-        onOpenChange={(v) => !v && setDeleteTarget(null)}
-      />
-    </div>
-  );
-}
-
-// ── Forwards tab ──────────────────────────────────────────────────────────────
-
-function ForwardsTab({ domain }: { domain: Domain }) {
-  const [newOpen, setNewOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<EmailForward | null>(null);
-  const queryClient = useQueryClient();
-
-  const { data: forwards, isLoading } = useQuery({
-    queryKey: ["domains", domain.name, "forwards"],
-    queryFn: () => fetchForwards(domain.name),
-  });
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        {isLoading ? (
-          <Skeleton className="h-5 w-40 bg-zinc-800" />
-        ) : (
-          <QuotaCounter
-            used={forwards?.length ?? 0}
-            max={domain.max_forwards}
-            label="forward"
-          />
-        )}
-        <div className="flex items-center gap-2">
-          <ImportButton
-            label="forwards"
-            onImport={() => importForwards(domain.name)}
-            onSuccess={(n) => {
-              queryClient.invalidateQueries({
-                queryKey: ["domains", domain.name, "forwards"],
-              });
-              toast.success(
-                n > 0
-                  ? `${n} forward${n !== 1 ? "s" : ""} imported`
-                  : "No new forwards to import"
-              );
-            }}
-          />
-          <Button
-            size="sm"
-            onClick={() => setNewOpen(true)}
-            className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            New Forward
-          </Button>
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="space-y-2">
-          {[1, 2].map((i) => (
-            <Skeleton key={i} className="h-12 bg-zinc-800 rounded" />
-          ))}
-        </div>
-      ) : forwards && forwards.length > 0 ? (
-        <div className="rounded-md border border-zinc-800">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="text-zinc-400">Source</TableHead>
-                <TableHead className="text-zinc-400">Destination</TableHead>
-                <TableHead className="text-zinc-400">Synced</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {forwards.map((fwd) => (
-                <TableRow
-                  key={fwd.id}
-                  className="border-zinc-800 hover:bg-zinc-800/50"
-                >
-                  <TableCell className="text-zinc-200 font-mono text-sm">
-                    {fwd.source}
-                  </TableCell>
-                  <TableCell className="text-zinc-400 font-mono text-sm">
-                    {fwd.destination}
-                  </TableCell>
-                  <TableCell>
-                    <SyncedDot synced={fwd.synced} />
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteTarget(fwd)}
-                      className="text-zinc-500 hover:text-red-400 hover:bg-red-950/30 h-8 w-8"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : (
-        <p className="text-center text-zinc-500 py-8">No forwards yet.</p>
-      )}
-
-      <NewForwardDialog
-        domain={domain}
-        open={newOpen}
-        onOpenChange={setNewOpen}
-      />
-      <DeleteForwardDialog
-        domainName={domain.name}
-        forward={deleteTarget}
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
       />
