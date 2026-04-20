@@ -225,7 +225,7 @@ def import_domains(
     return [DomainOut.model_validate(d) for d in created]
 
 
-@router.post("/domains/{domain_name}/import-emails", response_model=ImportResult)
+@router.post("/domains/{domain_name}/import-emails", response_model=ImportResult, status_code=status.HTTP_201_CREATED)
 async def import_emails(
     domain_name: str,
     admin: Annotated[User, Depends(require_admin)],
@@ -247,25 +247,28 @@ async def import_emails(
     }
 
     count = 0
-    for item in cyon_emails:
-        if item["email"] in existing:
-            continue
-        account = EmailAccount(
-            address=item["email"],
-            domain_id=domain.id,
-            quota_mb=item["quota_mb"],
-            synced=True,
-        )
-        db.add(account)
-        db.flush()
-        log_action(db, admin.id, "import_email", item["email"])
-        count += 1
-
-    db.commit()
+    try:
+        for item in cyon_emails:
+            if item["email"] in existing:
+                continue
+            account = EmailAccount(
+                address=item["email"],
+                domain_id=domain.id,
+                quota_mb=item["quota_mb"],
+                synced=True,
+            )
+            db.add(account)
+            db.flush()
+            log_action(db, admin.id, "import_email", item["email"])
+            count += 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Import failed")
     return ImportResult(imported=count)
 
 
-@router.post("/domains/{domain_name}/import-forwards", response_model=ImportResult)
+@router.post("/domains/{domain_name}/import-forwards", response_model=ImportResult, status_code=status.HTTP_201_CREATED)
 async def import_forwards(
     domain_name: str,
     admin: Annotated[User, Depends(require_admin)],
@@ -287,21 +290,24 @@ async def import_forwards(
     }
 
     count = 0
-    for item in cyon_forwards:
-        if (item["source"], item["destination"]) in existing:
-            continue
-        forward = EmailForward(
-            source=item["source"],
-            destination=item["destination"],
-            domain_id=domain.id,
-            synced=True,
-        )
-        db.add(forward)
-        db.flush()
-        log_action(db, admin.id, "import_forward", f"{item['source']} → {item['destination']}")
-        count += 1
-
-    db.commit()
+    try:
+        for item in cyon_forwards:
+            if (item["source"], item["destination"]) in existing:
+                continue
+            forward = EmailForward(
+                source=item["source"],
+                destination=item["destination"],
+                domain_id=domain.id,
+                synced=True,
+            )
+            db.add(forward)
+            db.flush()
+            log_action(db, admin.id, "import_forward", f"{item['source']} → {item['destination']}")
+            count += 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Import failed")
     return ImportResult(imported=count)
 
 
