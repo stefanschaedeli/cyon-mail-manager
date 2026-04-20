@@ -1,6 +1,7 @@
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Mail, Forward, Globe } from "lucide-react";
+import { Mail, Forward, Globe, Search, X } from "lucide-react";
 import { fetchDomains, fetchEmails, fetchForwards } from "@/lib/api";
 import {
   Card,
@@ -9,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import type { Domain } from "@/types";
 
 function DomainCard({ domain }: { domain: Domain }) {
@@ -66,10 +68,19 @@ function DomainCard({ domain }: { domain: Domain }) {
 }
 
 export default function DashboardPage() {
+  const [searchQuery, setSearchQuery] = useState("");
+
   const { data: domains, isLoading } = useQuery({
     queryKey: ["domains"],
     queryFn: fetchDomains,
   });
+
+  const filtered = useMemo(() => {
+    if (!domains) return [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return domains;
+    return domains.filter((d) => d.name.toLowerCase().includes(q));
+  }, [domains, searchQuery]);
 
   if (isLoading) {
     return (
@@ -101,12 +112,37 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold text-zinc-100">Domains</h1>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {domains.map((domain) => (
-          <DomainCard key={domain.id} domain={domain} />
-        ))}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold text-zinc-100">Domains</h1>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search…"
+            className="pl-8 pr-7 h-8 w-48 bg-zinc-800 border-zinc-700 text-zinc-100 text-sm focus-visible:ring-zinc-500"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
+      {filtered.length === 0 && searchQuery ? (
+        <p className="text-center text-zinc-500 py-8">
+          No results for «{searchQuery}»
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((domain) => (
+            <DomainCard key={domain.id} domain={domain} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
