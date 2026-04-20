@@ -206,9 +206,17 @@ def list_audit(
 # ── Sync ──────────────────────────────────────────────────────────────────────
 
 @router.post("/sync")
-def trigger_sync(
+async def trigger_sync(
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    # Implemented in Phase 6
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Sync not yet implemented")
+    import asyncio
+    from app.services.cyon import get_cyon_service
+    from app.services.sync import SyncService
+
+    cyon = get_cyon_service()
+    sync = SyncService()
+    result = await asyncio.to_thread(sync.sync_all, db, cyon)
+    log_action(db, admin.id, "sync", "all", result.to_dict())
+    db.commit()
+    return result.to_dict()

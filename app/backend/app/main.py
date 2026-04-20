@@ -8,6 +8,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from app.services.cyon import CyonError
+
 from app.schemas import HealthResponse
 
 limiter = Limiter(key_func=get_remote_address)
@@ -56,6 +58,11 @@ app.add_middleware(
 
 from app.api.router import router  # noqa: E402 — after app creation to avoid circular imports
 app.include_router(router)
+
+
+@app.exception_handler(CyonError)
+async def cyon_error_handler(request: Request, exc: CyonError):
+    return JSONResponse(status_code=502, content={"detail": f"cyon error: {exc}"})
 
 
 @app.get("/api/health", response_model=HealthResponse)
