@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import log_action, require_admin
 from app.core.auth import hash_password
 from app.core.database import get_db
-from app.services.cyon import CyonService, get_cyon_service
+from app.services.cyon import CyonError, CyonService, get_cyon_service
 from app.models import AuditLog, Domain, EmailAccount, EmailForward, User
 from app.schemas import (
     AuditOut,
@@ -239,8 +239,6 @@ async def import_emails(
     if not domain:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain not found")
 
-    cyon_emails = await asyncio.to_thread(cyon.list_emails, domain_name)
-
     existing = {
         a.address
         for a in db.query(EmailAccount).filter(EmailAccount.domain_id == domain.id).all()
@@ -248,6 +246,7 @@ async def import_emails(
 
     count = 0
     try:
+        cyon_emails = await asyncio.to_thread(cyon.list_emails, domain_name)
         for item in cyon_emails:
             if item["email"] in existing:
                 continue
@@ -262,6 +261,9 @@ async def import_emails(
             log_action(db, admin.id, "import_email", item["email"])
             count += 1
         db.commit()
+    except CyonError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"cyon error: {e}")
     except Exception:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Import failed")
@@ -281,8 +283,6 @@ async def import_forwards(
     if not domain:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain not found")
 
-    cyon_forwards = await asyncio.to_thread(cyon.list_forwards, domain_name)
-
     existing = {
         (f.source, f.destination)
         for f in db.query(EmailForward).filter(EmailForward.domain_id == domain.id).all()
@@ -290,6 +290,7 @@ async def import_forwards(
 
     count = 0
     try:
+        cyon_forwards = await asyncio.to_thread(cyon.list_forwards, domain_name)
         for item in cyon_forwards:
             if (item["source"], item["destination"]) in existing:
                 continue
@@ -304,6 +305,9 @@ async def import_forwards(
             log_action(db, admin.id, "import_forward", f"{item['source']} → {item['destination']}")
             count += 1
         db.commit()
+    except CyonError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"cyon error: {e}")
     except Exception:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Import failed")
