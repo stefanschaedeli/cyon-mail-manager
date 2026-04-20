@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronLeft, Plus, Trash2, Copy, Check, RefreshCw } from "lucide-react";
+import { ChevronLeft, Plus, Trash2, Copy, Check, RefreshCw, Download } from "lucide-react";
 import {
   fetchEmails,
   createEmail,
@@ -10,8 +10,11 @@ import {
   fetchForwards,
   createForward,
   deleteForward,
+  importEmails,
+  importForwards,
 } from "@/lib/api";
 import { generatePassword } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -561,11 +564,47 @@ function DeleteForwardDialog({
   );
 }
 
+// ── Import from cyon button ───────────────────────────────────────────────────
+
+function ImportButton({
+  label,
+  onImport,
+  onSuccess,
+}: {
+  label: string;
+  onImport: () => Promise<{ imported: number }>;
+  onSuccess: (n: number) => void;
+}) {
+  const mutation = useMutation({
+    mutationFn: onImport,
+    onSuccess: (data) => onSuccess(data.imported),
+    onError: () => toast.error(`Failed to import ${label} from cyon`),
+  });
+
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+      onClick={() => mutation.mutate()}
+      disabled={mutation.isPending}
+    >
+      {mutation.isPending ? (
+        <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+      ) : (
+        <Download className="h-4 w-4 mr-1" />
+      )}
+      Load from cyon
+    </Button>
+  );
+}
+
 // ── Emails tab ────────────────────────────────────────────────────────────────
 
-function EmailsTab({ domain }: { domain: Domain }) {
+function EmailsTab({ domain, isAdmin }: { domain: Domain; isAdmin: boolean }) {
   const [newOpen, setNewOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<EmailAccount | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: emails, isLoading } = useQuery({
     queryKey: ["domains", domain.name, "emails"],
@@ -584,14 +623,32 @@ function EmailsTab({ domain }: { domain: Domain }) {
             label="account"
           />
         )}
-        <Button
-          size="sm"
-          onClick={() => setNewOpen(true)}
-          className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          New Email
-        </Button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <ImportButton
+              label="emails"
+              onImport={() => importEmails(domain.name)}
+              onSuccess={(n) => {
+                queryClient.invalidateQueries({
+                  queryKey: ["domains", domain.name, "emails"],
+                });
+                toast.success(
+                  n > 0
+                    ? `${n} email${n !== 1 ? "s" : ""} imported`
+                    : "No new emails to import"
+                );
+              }}
+            />
+          )}
+          <Button
+            size="sm"
+            onClick={() => setNewOpen(true)}
+            className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            New Email
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -664,9 +721,10 @@ function EmailsTab({ domain }: { domain: Domain }) {
 
 // ── Forwards tab ──────────────────────────────────────────────────────────────
 
-function ForwardsTab({ domain }: { domain: Domain }) {
+function ForwardsTab({ domain, isAdmin }: { domain: Domain; isAdmin: boolean }) {
   const [newOpen, setNewOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<EmailForward | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: forwards, isLoading } = useQuery({
     queryKey: ["domains", domain.name, "forwards"],
@@ -685,14 +743,32 @@ function ForwardsTab({ domain }: { domain: Domain }) {
             label="forward"
           />
         )}
-        <Button
-          size="sm"
-          onClick={() => setNewOpen(true)}
-          className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          New Forward
-        </Button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <ImportButton
+              label="forwards"
+              onImport={() => importForwards(domain.name)}
+              onSuccess={(n) => {
+                queryClient.invalidateQueries({
+                  queryKey: ["domains", domain.name, "forwards"],
+                });
+                toast.success(
+                  n > 0
+                    ? `${n} forward${n !== 1 ? "s" : ""} imported`
+                    : "No new forwards to import"
+                );
+              }}
+            />
+          )}
+          <Button
+            size="sm"
+            onClick={() => setNewOpen(true)}
+            className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            New Forward
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -765,6 +841,8 @@ function ForwardsTab({ domain }: { domain: Domain }) {
 
 export default function DomainDetailPage() {
   const { name } = useParams<{ name: string }>();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const { data: domains, isLoading } = useQuery({
     queryKey: ["domains"],
@@ -826,10 +904,10 @@ export default function DomainDetailPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="emails" className="mt-4">
-          <EmailsTab domain={domain} />
+          <EmailsTab domain={domain} isAdmin={isAdmin} />
         </TabsContent>
         <TabsContent value="forwards" className="mt-4">
-          <ForwardsTab domain={domain} />
+          <ForwardsTab domain={domain} isAdmin={isAdmin} />
         </TabsContent>
       </Tabs>
     </div>
