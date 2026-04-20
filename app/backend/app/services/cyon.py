@@ -1,3 +1,4 @@
+import base64
 import json
 import shlex
 
@@ -87,6 +88,19 @@ class CyonService:
         ])
 
     # ── Domains ───────────────────────────────────────────────────────────────
+
+    def write_backup(self, domain: str, data: dict) -> str:
+        """Write a JSON backup to ~/backups/mail-manager/ on the cyon server."""
+        deleted_at = data.get("deleted_at", "unknown").replace(":", "").replace("-", "")
+        filename = f"backups/mail-manager/{domain}_{deleted_at}.json"
+        content = json.dumps(data, indent=2)
+        encoded = base64.b64encode(content.encode()).decode()
+        self._ssh.execute(f"mkdir -p ~/backups/mail-manager")
+        safe_filename = filename.replace("'", "")
+        self._ssh.execute(
+            f"echo {shlex.quote(encoded)} | base64 -d > ~/{safe_filename}"
+        )
+        return filename
 
     def list_domains(self) -> list[str]:
         result = self._run(["DomainInfo", "domains_data"])

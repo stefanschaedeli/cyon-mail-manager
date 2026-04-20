@@ -8,7 +8,7 @@ from app.core.limiter import limiter
 from app.core.auth import hash_password
 from app.core.database import get_db
 from app.services.cyon import CyonError, CyonService, get_cyon_service
-from app.models import AuditLog, Domain, User
+from app.models import AuditLog, Domain, EmailAccount, EmailForward, User
 from app.schemas import (
     AuditOut,
     DomainCreate,
@@ -173,16 +173,41 @@ def update_domain(
 
 
 @router.delete("/domains/{domain_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_domain(
+async def delete_domain(
     domain_id: int,
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
+    cyon: Annotated[CyonService, Depends(get_cyon_service)],
 ):
+    import asyncio
+    from datetime import datetime, timezone
+
     domain = db.query(Domain).filter(Domain.id == domain_id).first()
     if not domain:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain not found")
 
-    log_action(db, admin.id, "delete_domain", domain.name)
+    emails = db.query(EmailAccount).filter(EmailAccount.domain_id == domain_id).all()
+    forwards = db.query(EmailForward).filter(EmailForward.domain_id == domain_id).all()
+
+    backup_payload = {
+        "domain": domain.name,
+        "deleted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "deleted_by": admin.username,
+        "email_accounts": [{"address": e.address, "quota_mb": e.quota_mb} for e in emails],
+        "email_forwards": [{"source": f.source, "destination": f.destination} for f in forwards],
+    }
+
+    try:
+        backup_path = await asyncio.to_thread(cyon.write_backup, domain.name, backup_payload)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to write backup on cyon server: {exc}",
+        )
+
+    db.query(EmailAccount).filter(EmailAccount.domain_id == domain_id).delete()
+    db.query(EmailForward).filter(EmailForward.domain_id == domain_id).delete()
+    log_action(db, admin.id, "delete_domain", domain.name, {"backup": backup_path})
     db.delete(domain)
     db.commit()
 

@@ -60,6 +60,26 @@ First run: auto-creates admin from env vars if no users exist.
 
 Domain access is enforced **server-side** on every request (`deps.py::verify_domain_access`).
 
+## Versioning
+
+`app/version.txt` is the single source of truth for the app version. It is read at frontend build time by Vite and displayed in the sidebar.
+
+**Before every commit**, bump the patch version in `app/version.txt` (e.g. `0.1.0` → `0.1.1`) and include the updated file in the commit.
+
+### Commit message format
+
+Use a short one-line subject, then a bullet-point body listing every change:
+
+```
+v0.1.1 — <short summary of the session's changes>
+
+- <change 1>
+- <change 2>
+- <change 3>
+```
+
+Keep bullets short and user-facing (what changed, not how). No filler phrases like "updated" or "refactored" — just state the change directly.
+
 ## Build Order
 
 1. Backend models + Alembic migration
