@@ -2,12 +2,31 @@
 
 Self-hosted web app for managing email addresses and forwards on [cyon.ch](https://cyon.ch) hosting. Assign domains to customers; customers manage their own email accounts and forwards without needing cPanel access.
 
+<img src="docs/screenshots/02-dashboard.png" width="720" alt="Domain overview dashboard" />
+
 ## What It Does
 
 - **Admin** creates customer accounts, assigns cyon domains to them, and triggers sync with cyon servers
 - **Customers** create and delete email accounts and forwards for their assigned domains
 - All changes are applied live to cyon via SSH + cPanel UAPI — no manual cPanel access needed
 - Full audit log of every action
+
+## Screenshots
+
+<table>
+<tr>
+<td><img src="docs/screenshots/01-login.png" width="360" alt="Login" /><br><sub>Login</sub></td>
+<td><img src="docs/screenshots/03-admin-users.png" width="360" alt="User management" /><br><sub>User management</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/04-admin-domains.png" width="360" alt="Domain management" /><br><sub>Domain management</sub></td>
+<td><img src="docs/screenshots/05-audit-log.png" width="360" alt="Audit log" /><br><sub>Audit log</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/06-domain-emails.png" width="360" alt="Email accounts" /><br><sub>Domain — Email Accounts tab</sub></td>
+<td><img src="docs/screenshots/07-domain-forwards.png" width="360" alt="Email forwards" /><br><sub>Domain — Forwards tab</sub></td>
+</tr>
+</table>
 
 ## Stack
 
