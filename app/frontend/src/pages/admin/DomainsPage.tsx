@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Trash2, Pencil, Download, Loader2 } from "lucide-react";
 import {
   fetchAdminDomains,
   fetchUsers,
   createDomain,
   updateDomain,
   deleteDomain,
+  fetchCyonDomains,
+  importDomains,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -340,12 +342,101 @@ function DeleteDomainDialog({
   );
 }
 
+// ── Import from cyon dialog ───────────────────────────────────────────────────
+
+function ImportDomainsDialog({
+  open,
+  onOpenChange,
+  available,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  available: string[];
+}) {
+  const queryClient = useQueryClient();
+  const [checked, setChecked] = useState<Set<string>>(new Set(available));
+
+  // Reset when dialog opens with new data
+  if (open && checked.size === 0 && available.length > 0) {
+    setChecked(new Set(available));
+  }
+
+  function toggle(domain: string) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      next.has(domain) ? next.delete(domain) : next.add(domain);
+      return next;
+    });
+  }
+
+  const mutation = useMutation({
+    mutationFn: () => importDomains([...checked]),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "domains"] });
+      toast.success(`${created.length} domain${created.length !== 1 ? "s" : ""} imported`);
+      onOpenChange(false);
+      setChecked(new Set());
+    },
+    onError: () => toast.error("Import failed"),
+  });
+
+  const selectedCount = checked.size;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Import from cyon</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-zinc-400">
+          {available.length} new domain{available.length !== 1 ? "s" : ""} found on cyon.
+          Select which to import as unassigned.
+        </p>
+        <div className="max-h-64 overflow-y-auto space-y-1 rounded-md border border-zinc-800 p-2">
+          {available.map((domain) => (
+            <label
+              key={domain}
+              className="flex items-center gap-3 px-2 py-1.5 rounded cursor-pointer hover:bg-zinc-800"
+            >
+              <input
+                type="checkbox"
+                checked={checked.has(domain)}
+                onChange={() => toggle(domain)}
+                className="accent-zinc-400 h-4 w-4"
+              />
+              <span className="text-sm font-mono text-zinc-200">{domain}</span>
+            </label>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button
+            variant="ghost"
+            className="text-zinc-400 hover:text-zinc-100"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            disabled={selectedCount === 0 || mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending ? "Importing…" : `Import ${selectedCount} domain${selectedCount !== 1 ? "s" : ""}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function DomainsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editDomain, setEditDomain] = useState<Domain | null>(null);
   const [deleteDomain, setDeleteDomain] = useState<Domain | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [cyonDomains, setCyonDomains] = useState<string[]>([]);
+  const [fetchingCyon, setFetchingCyon] = useState(false);
 
   const { data: domains, isLoading: domainsLoading } = useQuery({
     queryKey: ["admin", "domains"],
@@ -360,14 +451,46 @@ export default function DomainsPage() {
   const customers = users?.filter((u) => u.role === "customer") ?? [];
   const userMap = new Map(users?.map((u) => [u.id, u.username]) ?? []);
 
+  async function handleImportClick() {
+    setFetchingCyon(true);
+    try {
+      const available = await fetchCyonDomains();
+      if (available.length === 0) {
+        toast.success("All cyon domains are already imported");
+      } else {
+        setCyonDomains(available);
+        setImportOpen(true);
+      }
+    } catch {
+      toast.error("Failed to fetch domains from cyon");
+    } finally {
+      setFetchingCyon(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-zinc-100">Domains</h1>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Domain
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+            onClick={handleImportClick}
+            disabled={fetchingCyon}
+          >
+            {fetchingCyon ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 mr-2" />
+            )}
+            Import from cyon
+          </Button>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Domain
+          </Button>
+        </div>
       </div>
 
       {domainsLoading ? (
@@ -458,6 +581,11 @@ export default function DomainsPage() {
       <DeleteDomainDialog
         domain={deleteDomain}
         onOpenChange={(v) => !v && setDeleteDomain(null)}
+      />
+      <ImportDomainsDialog
+        open={importOpen}
+        onOpenChange={(v) => { setImportOpen(v); if (!v) setCyonDomains([]); }}
+        available={cyonDomains}
       />
     </div>
   );
