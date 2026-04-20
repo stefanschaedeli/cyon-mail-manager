@@ -6,13 +6,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import log_action, require_admin
 from app.core.auth import hash_password
 from app.core.database import get_db
-from app.models import AuditLog, Domain, User
+from app.models import AuditLog, Domain, EmailAccount, EmailForward, User
 from app.schemas import (
     AuditOut,
     DomainCreate,
     DomainImportRequest,
     DomainOut,
     DomainUpdate,
+    ImportResult,
     UserCreate,
     UserOut,
     UserUpdate,
@@ -222,6 +223,86 @@ def import_domains(
     for d in created:
         db.refresh(d)
     return [DomainOut.model_validate(d) for d in created]
+
+
+@router.post("/domains/{domain_name}/import-emails", response_model=ImportResult)
+async def import_emails(
+    domain_name: str,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    import asyncio
+    from app.services.cyon import get_cyon_service
+
+    domain = db.query(Domain).filter(Domain.name == domain_name).first()
+    if not domain:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain not found")
+
+    cyon = get_cyon_service()
+    cyon_emails = await asyncio.to_thread(cyon.list_emails, domain_name)
+
+    existing = {
+        a.address
+        for a in db.query(EmailAccount).filter(EmailAccount.domain_id == domain.id).all()
+    }
+
+    count = 0
+    for item in cyon_emails:
+        if item["email"] in existing:
+            continue
+        account = EmailAccount(
+            address=item["email"],
+            domain_id=domain.id,
+            quota_mb=item["quota_mb"],
+            synced=True,
+        )
+        db.add(account)
+        db.flush()
+        log_action(db, admin.id, "import_email", item["email"])
+        count += 1
+
+    db.commit()
+    return ImportResult(imported=count)
+
+
+@router.post("/domains/{domain_name}/import-forwards", response_model=ImportResult)
+async def import_forwards(
+    domain_name: str,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    import asyncio
+    from app.services.cyon import get_cyon_service
+
+    domain = db.query(Domain).filter(Domain.name == domain_name).first()
+    if not domain:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain not found")
+
+    cyon = get_cyon_service()
+    cyon_forwards = await asyncio.to_thread(cyon.list_forwards, domain_name)
+
+    existing = {
+        (f.source, f.destination)
+        for f in db.query(EmailForward).filter(EmailForward.domain_id == domain.id).all()
+    }
+
+    count = 0
+    for item in cyon_forwards:
+        if (item["source"], item["destination"]) in existing:
+            continue
+        forward = EmailForward(
+            source=item["source"],
+            destination=item["destination"],
+            domain_id=domain.id,
+            synced=True,
+        )
+        db.add(forward)
+        db.flush()
+        log_action(db, admin.id, "import_forward", f"{item['source']} → {item['destination']}")
+        count += 1
+
+    db.commit()
+    return ImportResult(imported=count)
 
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
