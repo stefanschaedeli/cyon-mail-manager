@@ -24,8 +24,8 @@ data/ssh/
 data/
 
 # Frontend
-frontend/node_modules/
-frontend/dist/
+app/frontend/node_modules/
+app/frontend/dist/
 
 # macOS
 .DS_Store
