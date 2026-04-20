@@ -2,13 +2,14 @@ import asyncio
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, log_action, verify_domain_access
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.models import Domain, EmailAccount, User
-from app.schemas import EmailCreate, EmailOut
+from app.schemas import EmailCreate, EmailOut, ImportResult
 from app.services.cyon import CyonError, CyonService, get_cyon_service
 
 router = APIRouter(prefix="/api/domains", tags=["emails"])
@@ -25,7 +26,9 @@ def list_emails(
 
 
 @router.post("/{domain_name}/emails", response_model=EmailOut, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 async def create_email(
+    request: Request,
     domain: Annotated[Domain, Depends(verify_domain_access)],
     body: EmailCreate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -62,6 +65,44 @@ async def create_email(
     db.commit()
     db.refresh(account)
     return EmailOut.model_validate(account)
+
+
+@router.post("/{domain_name}/import-emails", status_code=status.HTTP_201_CREATED)
+async def import_emails(
+    domain: Annotated[Domain, Depends(verify_domain_access)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    cyon: Annotated[CyonService, Depends(get_cyon_service)],
+):
+    existing = {
+        a.address
+        for a in db.query(EmailAccount).filter(EmailAccount.domain_id == domain.id).all()
+    }
+
+    count = 0
+    try:
+        cyon_emails = await asyncio.to_thread(cyon.list_emails, domain.name)
+        for item in cyon_emails:
+            if item["email"] in existing:
+                continue
+            account = EmailAccount(
+                address=item["email"],
+                domain_id=domain.id,
+                quota_mb=item["quota_mb"],
+                synced=True,
+            )
+            db.add(account)
+            db.flush()
+            log_action(db, current_user.id, "import_email", item["email"])
+            count += 1
+        db.commit()
+    except CyonError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"cyon error: {e}")
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Import failed")
+    return ImportResult(imported=count)
 
 
 @router.delete("/{domain_name}/emails/{address:path}", status_code=status.HTTP_204_NO_CONTENT)

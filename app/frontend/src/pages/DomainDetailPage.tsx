@@ -14,7 +14,6 @@ import {
   importForwards,
 } from "@/lib/api";
 import { generatePassword } from "@/lib/utils";
-import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -601,7 +600,7 @@ function ImportButton({
 
 // ── Emails tab ────────────────────────────────────────────────────────────────
 
-function EmailsTab({ domain, isAdmin }: { domain: Domain; isAdmin: boolean }) {
+function EmailsTab({ domain }: { domain: Domain }) {
   const [newOpen, setNewOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<EmailAccount | null>(null);
   const queryClient = useQueryClient();
@@ -624,22 +623,20 @@ function EmailsTab({ domain, isAdmin }: { domain: Domain; isAdmin: boolean }) {
           />
         )}
         <div className="flex items-center gap-2">
-          {isAdmin && (
-            <ImportButton
-              label="emails"
-              onImport={() => importEmails(domain.name)}
-              onSuccess={(n) => {
-                queryClient.invalidateQueries({
-                  queryKey: ["domains", domain.name, "emails"],
-                });
-                toast.success(
-                  n > 0
-                    ? `${n} email${n !== 1 ? "s" : ""} imported`
-                    : "No new emails to import"
-                );
-              }}
-            />
-          )}
+          <ImportButton
+            label="emails"
+            onImport={() => importEmails(domain.name)}
+            onSuccess={(n) => {
+              queryClient.invalidateQueries({
+                queryKey: ["domains", domain.name, "emails"],
+              });
+              toast.success(
+                n > 0
+                  ? `${n} email${n !== 1 ? "s" : ""} imported`
+                  : "No new emails to import"
+              );
+            }}
+          />
           <Button
             size="sm"
             onClick={() => setNewOpen(true)}
@@ -721,7 +718,7 @@ function EmailsTab({ domain, isAdmin }: { domain: Domain; isAdmin: boolean }) {
 
 // ── Forwards tab ──────────────────────────────────────────────────────────────
 
-function ForwardsTab({ domain, isAdmin }: { domain: Domain; isAdmin: boolean }) {
+function ForwardsTab({ domain }: { domain: Domain }) {
   const [newOpen, setNewOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<EmailForward | null>(null);
   const queryClient = useQueryClient();
@@ -744,22 +741,20 @@ function ForwardsTab({ domain, isAdmin }: { domain: Domain; isAdmin: boolean }) 
           />
         )}
         <div className="flex items-center gap-2">
-          {isAdmin && (
-            <ImportButton
-              label="forwards"
-              onImport={() => importForwards(domain.name)}
-              onSuccess={(n) => {
-                queryClient.invalidateQueries({
-                  queryKey: ["domains", domain.name, "forwards"],
-                });
-                toast.success(
-                  n > 0
-                    ? `${n} forward${n !== 1 ? "s" : ""} imported`
-                    : "No new forwards to import"
-                );
-              }}
-            />
-          )}
+          <ImportButton
+            label="forwards"
+            onImport={() => importForwards(domain.name)}
+            onSuccess={(n) => {
+              queryClient.invalidateQueries({
+                queryKey: ["domains", domain.name, "forwards"],
+              });
+              toast.success(
+                n > 0
+                  ? `${n} forward${n !== 1 ? "s" : ""} imported`
+                  : "No new forwards to import"
+              );
+            }}
+          />
           <Button
             size="sm"
             onClick={() => setNewOpen(true)}
@@ -841,9 +836,6 @@ function ForwardsTab({ domain, isAdmin }: { domain: Domain; isAdmin: boolean }) 
 
 export default function DomainDetailPage() {
   const { name } = useParams<{ name: string }>();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
-
   const { data: domains, isLoading } = useQuery({
     queryKey: ["domains"],
     queryFn: fetchDomains,
@@ -904,10 +896,10 @@ export default function DomainDetailPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="emails" className="mt-4">
-          <EmailsTab domain={domain} isAdmin={isAdmin} />
+          <EmailsTab domain={domain} />
         </TabsContent>
         <TabsContent value="forwards" className="mt-4">
-          <ForwardsTab domain={domain} isAdmin={isAdmin} />
+          <ForwardsTab domain={domain} />
         </TabsContent>
       </Tabs>
     </div>

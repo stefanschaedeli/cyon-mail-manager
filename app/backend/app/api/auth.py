@@ -1,25 +1,26 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.auth import create_access_token, verify_password
+from app.core.auth import create_access_token, verify_password, _DUMMY_HASH
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.models import User
 from app.schemas import LoginRequest, TokenResponse, UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 def login(request: Request, body: LoginRequest, db: Annotated[Session, Depends(get_db)]):
     user = db.query(User).filter(User.username == body.username).first()
-    if not user or not verify_password(body.password, user.password_hash):
+    # Always run bcrypt to prevent user enumeration via timing
+    password_hash = user.password_hash if user else _DUMMY_HASH
+    password_ok = verify_password(body.password, password_hash)
+    if not user or not password_ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")

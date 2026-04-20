@@ -6,6 +6,11 @@ from jose import JWTError, jwt
 from app.config import settings
 
 
+# Pre-computed hash used as a timing dummy when a username doesn't exist,
+# so login always runs bcrypt regardless of whether the user was found.
+_DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
+
+
 def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 

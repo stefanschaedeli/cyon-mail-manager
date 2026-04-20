@@ -8,8 +8,15 @@ from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 class UserCreate(BaseModel):
     username: str
     password: str
-    email: str
+    email: EmailStr
     role: str = "customer"
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("password must be at least 8 characters")
+        return v
 
     @field_validator("role")
     @classmethod
@@ -20,7 +27,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    email: str | None = None
+    email: EmailStr | None = None
     is_active: bool | None = None
 
 
@@ -67,6 +74,13 @@ class EmailCreate(BaseModel):
     local_part: str
     password: str
     quota_mb: int = 0
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("password must be at least 8 characters")
+        return v
 
 
 class EmailOut(BaseModel):

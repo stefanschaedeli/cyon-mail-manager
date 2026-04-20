@@ -12,10 +12,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps for Paramiko (SSH)
+# System deps for Paramiko (SSH) + create non-root user
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -s /bin/false -d /app appuser
 
 # Python deps
 COPY backend/requirements.txt ./
@@ -32,7 +33,10 @@ WORKDIR /app/backend
 
 # Entrypoint
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh \
+    && chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 8000
 

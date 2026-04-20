@@ -11,7 +11,15 @@ class SSHClient:
 
     def _connect(self) -> None:
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        known_hosts = "/data/ssh/known_hosts"
+        try:
+            client.load_host_keys(known_hosts)
+        except FileNotFoundError:
+            raise RuntimeError(
+                f"SSH known_hosts file not found at {known_hosts}. "
+                "Run: ssh-keyscan -H <host> >> /data/ssh/known_hosts"
+            )
         key = paramiko.Ed25519Key.from_private_key_file(self._key_path)
         client.connect(
             hostname=self._host,
@@ -26,7 +34,7 @@ class SSHClient:
         if self._client is None:
             self._connect()
         assert self._client is not None
-        _, stdout, stderr = self._client.exec_command(command)
+        _, stdout, stderr = self._client.exec_command(command, timeout=30)
         output = stdout.read().decode()
         exit_code = stdout.channel.recv_exit_status()
         if exit_code != 0:

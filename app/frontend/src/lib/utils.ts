@@ -9,9 +9,17 @@ const PASSWORD_CHARS =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
 
 export function generatePassword(length: number): string {
-  const array = new Uint8Array(length);
-  crypto.getRandomValues(array);
-  return Array.from(array)
-    .map((byte) => PASSWORD_CHARS[byte % PASSWORD_CHARS.length])
-    .join("");
+  const chars = PASSWORD_CHARS;
+  // Use rejection sampling to avoid modulo bias (256 % 72 != 0)
+  const limit = 256 - (256 % chars.length);
+  const result: string[] = [];
+  while (result.length < length) {
+    const array = new Uint8Array(length - result.length + 16);
+    crypto.getRandomValues(array);
+    for (const byte of array) {
+      if (result.length >= length) break;
+      if (byte < limit) result.push(chars[byte % chars.length]);
+    }
+  }
+  return result.join("");
 }
