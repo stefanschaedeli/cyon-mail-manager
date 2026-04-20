@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, UserCheck, UserX } from "lucide-react";
+import { Plus, Trash2, Pencil, UserCheck, UserX, Search, X, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { fetchUsers, createUser, updateUser, deleteUser } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,41 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { User, UserCreate, UserUpdate } from "@/types";
+
+// ── SortableHeader ────────────────────────────────────────────────────────────
+
+type SortDir = "asc" | "desc" | null;
+
+function SortableHeader({
+  col,
+  label,
+  sortCol,
+  sortDir,
+  onSort,
+  className,
+}: {
+  col: string;
+  label: string;
+  sortCol: string | null;
+  sortDir: SortDir;
+  onSort: (col: string) => void;
+  className?: string;
+}) {
+  const active = sortCol === col;
+  return (
+    <TableHead
+      className={`text-zinc-400 cursor-pointer select-none hover:text-zinc-200 ${className ?? ""}`}
+      onClick={() => onSort(col)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active && sortDir === "asc" && <ChevronUp className="h-3.5 w-3.5" />}
+        {active && sortDir === "desc" && <ChevronDown className="h-3.5 w-3.5" />}
+        {!active && <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" />}
+      </span>
+    </TableHead>
+  );
+}
 
 // ── Create dialog ─────────────────────────────────────────────────────────────
 
@@ -157,14 +192,15 @@ function EditUserDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const [email, setEmail] = useState(user?.email ?? "");
-  const [isActive, setIsActive] = useState(user?.is_active ?? true);
+  const [email, setEmail] = useState("");
+  const [isActive, setIsActive] = useState(true);
 
-  // sync state when user changes
-  if (user && email === "" && user.email) {
-    setEmail(user.email);
-    setIsActive(user.is_active);
-  }
+  useEffect(() => {
+    if (user) {
+      setEmail(user.email);
+      setIsActive(user.is_active);
+    }
+  }, [user]);
 
   const mutation = useMutation({
     mutationFn: (data: UserUpdate) => updateUser(user!.id, data),
@@ -293,14 +329,75 @@ export default function UsersPage() {
     queryFn: fetchUsers,
   });
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+
+  function handleSort(col: string) {
+    if (sortCol !== col) {
+      setSortCol(col);
+      setSortDir("asc");
+    } else if (sortDir === "asc") {
+      setSortDir("desc");
+    } else {
+      setSortCol(null);
+      setSortDir(null);
+    }
+  }
+
+  const filtered = useMemo(() => {
+    if (!users) return [];
+    const q = searchQuery.trim().toLowerCase();
+    let result = q
+      ? users.filter(
+          (u) =>
+            u.username.toLowerCase().includes(q) ||
+            u.email.toLowerCase().includes(q)
+        )
+      : [...users];
+
+    if (sortCol && sortDir) {
+      result.sort((a, b) => {
+        let av: string, bv: string;
+        if (sortCol === "username") { av = a.username; bv = b.username; }
+        else if (sortCol === "email") { av = a.email; bv = b.email; }
+        else if (sortCol === "role") { av = a.role; bv = b.role; }
+        else if (sortCol === "status") { av = a.is_active ? "active" : "inactive"; bv = b.is_active ? "active" : "inactive"; }
+        else { av = a.created_at; bv = b.created_at; }
+        const cmp = av.localeCompare(bv);
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+    return result;
+  }, [users, searchQuery, sortCol, sortDir]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-zinc-100">Users</h1>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          New User
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search…"
+              className="pl-8 pr-7 h-8 w-48 bg-zinc-800 border-zinc-700 text-zinc-100 text-sm focus-visible:ring-zinc-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            New User
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -314,16 +411,16 @@ export default function UsersPage() {
           <Table>
             <TableHeader>
               <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="text-zinc-400">Username</TableHead>
-                <TableHead className="text-zinc-400">Email</TableHead>
-                <TableHead className="text-zinc-400 w-24">Role</TableHead>
-                <TableHead className="text-zinc-400 w-24">Status</TableHead>
-                <TableHead className="text-zinc-400 w-36">Created</TableHead>
+                <SortableHeader col="username" label="Username" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader col="email" label="Email" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader col="role" label="Role" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="w-24" />
+                <SortableHeader col="status" label="Status" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="w-24" />
+                <SortableHeader col="created" label="Created" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="w-36" />
                 <TableHead className="text-zinc-400 w-24 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users?.map((u) => (
+              {filtered.map((u) => (
                 <TableRow key={u.id} className="border-zinc-800 hover:bg-zinc-800/50">
                   <TableCell className="text-zinc-100 font-medium">
                     {u.username}
@@ -386,6 +483,11 @@ export default function UsersPage() {
             </TableBody>
           </Table>
         </div>
+      )}
+      {filtered.length === 0 && searchQuery && (
+        <p className="text-center text-zinc-500 py-8">
+          No results for «{searchQuery}»
+        </p>
       )}
 
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
