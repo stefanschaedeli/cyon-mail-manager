@@ -135,3 +135,9 @@ class HealthResponse(BaseModel):
     status: str
     db_ok: bool
     ssh_ok: bool
+
+
+# ── Import result schema ──────────────────────────────────────────────────────
+
+class ImportResult(BaseModel):
+    imported: int
