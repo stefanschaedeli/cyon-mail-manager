@@ -10,6 +10,7 @@ from app.models import AuditLog, Domain, User
 from app.schemas import (
     AuditOut,
     DomainCreate,
+    DomainImportRequest,
     DomainOut,
     DomainUpdate,
     UserCreate,
@@ -182,6 +183,45 @@ def delete_domain(
     log_action(db, admin.id, "delete_domain", domain.name)
     db.delete(domain)
     db.commit()
+
+
+# ── Cyon domain discovery + import ───────────────────────────────────────────
+
+@router.get("/domains/cyon", response_model=list[str])
+async def list_cyon_domains(
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    import asyncio
+    from app.services.cyon import get_cyon_service
+
+    cyon = get_cyon_service()
+    cyon_domains = await asyncio.to_thread(cyon.list_domains)
+    existing = {d.name for d in db.query(Domain).all()}
+    return [d for d in cyon_domains if d not in existing]
+
+
+@router.post("/domains/import", response_model=list[DomainOut], status_code=status.HTTP_201_CREATED)
+def import_domains(
+    body: DomainImportRequest,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    existing = {d.name for d in db.query(Domain).all()}
+    created = []
+    for name in body.domains:
+        if name in existing:
+            continue
+        domain = Domain(name=name, user_id=None, max_emails=0, max_forwards=0)
+        db.add(domain)
+        db.flush()
+        log_action(db, admin.id, "domain_import", name)
+        created.append(domain)
+        existing.add(name)
+    db.commit()
+    for d in created:
+        db.refresh(d)
+    return [DomainOut.model_validate(d) for d in created]
 
 
 # ── Audit log ─────────────────────────────────────────────────────────────────

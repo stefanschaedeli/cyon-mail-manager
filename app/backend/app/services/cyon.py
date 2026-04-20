@@ -86,6 +86,18 @@ class CyonService:
             f"forwarder={destination}",
         ])
 
+    # ── Domains ───────────────────────────────────────────────────────────────
+
+    def list_domains(self) -> list[str]:
+        result = self._run(["DomainInfo", "domains_data"])
+        data = result.get("data") or {}
+        domains: list[str] = []
+        if main := data.get("main_domain"):
+            domains.append(main["domain"])
+        for addon in data.get("addon_domains") or []:
+            domains.append(addon["domain"])
+        return sorted(domains)
+
 
 def get_cyon_service() -> CyonService:
     from app.config import settings

@@ -154,6 +154,16 @@ export async function deleteDomain(id: number): Promise<void> {
   await api.delete(`/admin/domains/${id}`);
 }
 
+export async function fetchCyonDomains(): Promise<string[]> {
+  const res = await api.get<string[]>("/admin/domains/cyon");
+  return res.data;
+}
+
+export async function importDomains(domains: string[]): Promise<Domain[]> {
+  const res = await api.post<Domain[]>("/admin/domains/import", { domains });
+  return res.data;
+}
+
 // ── Admin: audit + sync ───────────────────────────────────────────────────────
 
 export async function fetchAudit(page = 1): Promise<AuditEntry[]> {

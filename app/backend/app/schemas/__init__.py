@@ -123,6 +123,12 @@ class TokenResponse(BaseModel):
     user: UserOut
 
 
+# ── Domain import schemas ─────────────────────────────────────────────────────
+
+class DomainImportRequest(BaseModel):
+    domains: list[str]
+
+
 # ── Health schemas ────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):
