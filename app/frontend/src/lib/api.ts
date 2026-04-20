@@ -164,6 +164,20 @@ export async function importDomains(domains: string[]): Promise<Domain[]> {
   return res.data;
 }
 
+export async function importEmails(domainName: string): Promise<{ imported: number }> {
+  const res = await api.post<{ imported: number }>(
+    `/admin/domains/${domainName}/import-emails`
+  );
+  return res.data;
+}
+
+export async function importForwards(domainName: string): Promise<{ imported: number }> {
+  const res = await api.post<{ imported: number }>(
+    `/admin/domains/${domainName}/import-forwards`
+  );
+  return res.data;
+}
+
 // ── Admin: audit + sync ───────────────────────────────────────────────────────
 
 export async function fetchAudit(page = 1): Promise<AuditEntry[]> {
