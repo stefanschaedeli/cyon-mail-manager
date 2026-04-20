@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, Download, Loader2 } from "lucide-react";
+import { Plus, Trash2, Pencil, Download, Loader2, Search, X, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import {
   fetchAdminDomains,
   fetchUsers,
@@ -38,6 +38,41 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { Domain, DomainCreate, DomainUpdate, User } from "@/types";
+
+// ── SortableHeader ────────────────────────────────────────────────────────────
+
+type SortDir = "asc" | "desc" | null;
+
+function SortableHeader({
+  col,
+  label,
+  sortCol,
+  sortDir,
+  onSort,
+  className,
+}: {
+  col: string;
+  label: string;
+  sortCol: string | null;
+  sortDir: SortDir;
+  onSort: (col: string) => void;
+  className?: string;
+}) {
+  const active = sortCol === col;
+  return (
+    <TableHead
+      className={`text-zinc-400 cursor-pointer select-none hover:text-zinc-200 ${className ?? ""}`}
+      onClick={() => onSort(col)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active && sortDir === "asc" && <ChevronUp className="h-3.5 w-3.5" />}
+        {active && sortDir === "desc" && <ChevronDown className="h-3.5 w-3.5" />}
+        {!active && <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" />}
+      </span>
+    </TableHead>
+  );
+}
 
 // ── Create dialog ─────────────────────────────────────────────────────────────
 
@@ -176,25 +211,17 @@ function EditDomainDialog({
   customers: User[];
 }) {
   const queryClient = useQueryClient();
-  const [userId, setUserId] = useState<string>(
-    domain?.user_id != null ? String(domain.user_id) : "none"
-  );
-  const [maxEmails, setMaxEmails] = useState(String(domain?.max_emails ?? 0));
-  const [maxForwards, setMaxForwards] = useState(
-    String(domain?.max_forwards ?? 0)
-  );
+  const [userId, setUserId] = useState<string>("none");
+  const [maxEmails, setMaxEmails] = useState("0");
+  const [maxForwards, setMaxForwards] = useState("0");
 
-  // sync when domain changes
-  if (
-    domain &&
-    userId === "none" &&
-    domain.user_id != null &&
-    String(domain.user_id) !== userId
-  ) {
-    setUserId(String(domain.user_id));
-    setMaxEmails(String(domain.max_emails));
-    setMaxForwards(String(domain.max_forwards));
-  }
+  useEffect(() => {
+    if (domain) {
+      setUserId(domain.user_id != null ? String(domain.user_id) : "none");
+      setMaxEmails(String(domain.max_emails));
+      setMaxForwards(String(domain.max_forwards));
+    }
+  }, [domain]);
 
   const mutation = useMutation({
     mutationFn: (data: DomainUpdate) => updateDomain(domain!.id, data),
@@ -449,7 +476,62 @@ export default function DomainsPage() {
   });
 
   const customers = users?.filter((u) => u.role === "customer") ?? [];
-  const userMap = new Map(users?.map((u) => [u.id, u.username]) ?? []);
+  const userMap = useMemo(
+    () => new Map(users?.map((u) => [u.id, u.username]) ?? []),
+    [users]
+  );
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+
+  function handleSort(col: string) {
+    if (sortCol !== col) {
+      setSortCol(col);
+      setSortDir("asc");
+    } else if (sortDir === "asc") {
+      setSortDir("desc");
+    } else {
+      setSortCol(null);
+      setSortDir(null);
+    }
+  }
+
+  function cmpNum(a: number, b: number, dir: "asc" | "desc"): number {
+    return dir === "asc" ? a - b : b - a;
+  }
+
+  const filtered = useMemo(() => {
+    if (!domains) return [];
+    const q = searchQuery.trim().toLowerCase();
+    let result = q
+      ? domains.filter((d) => {
+          const assignedName = d.user_id != null ? (userMap.get(d.user_id) ?? "").toLowerCase() : "";
+          return d.name.toLowerCase().includes(q) || assignedName.includes(q);
+        })
+      : [...domains];
+
+    if (sortCol && sortDir) {
+      result.sort((a, b) => {
+        if (sortCol === "name") {
+          const cmp = a.name.localeCompare(b.name);
+          return sortDir === "asc" ? cmp : -cmp;
+        }
+        if (sortCol === "assigned") {
+          const av = a.user_id != null ? (userMap.get(a.user_id) ?? "") : "";
+          const bv = b.user_id != null ? (userMap.get(b.user_id) ?? "") : "";
+          const cmp = av.localeCompare(bv);
+          return sortDir === "asc" ? cmp : -cmp;
+        }
+        if (sortCol === "max_emails") return cmpNum(a.max_emails, b.max_emails, sortDir);
+        if (sortCol === "max_forwards") return cmpNum(a.max_forwards, b.max_forwards, sortDir);
+        // created
+        const cmp = a.created_at.localeCompare(b.created_at);
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+    return result;
+  }, [domains, searchQuery, sortCol, sortDir, userMap]);
 
   async function handleImportClick() {
     setFetchingCyon(true);
@@ -473,6 +555,23 @@ export default function DomainsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-zinc-100">Domains</h1>
         <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search…"
+              className="pl-8 pr-7 h-8 w-48 bg-zinc-800 border-zinc-700 text-zinc-100 text-sm focus-visible:ring-zinc-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
           <Button
             variant="outline"
             className="border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
@@ -500,26 +599,21 @@ export default function DomainsPage() {
           ))}
         </div>
       ) : (
+        <>
         <div className="rounded-md border border-zinc-800 overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="text-zinc-400">Domain</TableHead>
-                <TableHead className="text-zinc-400 w-36">Assigned to</TableHead>
-                <TableHead className="text-zinc-400 w-28 text-center">
-                  Max emails
-                </TableHead>
-                <TableHead className="text-zinc-400 w-28 text-center">
-                  Max forwards
-                </TableHead>
-                <TableHead className="text-zinc-400 w-36">Created</TableHead>
-                <TableHead className="text-zinc-400 w-24 text-right">
-                  Actions
-                </TableHead>
+                <SortableHeader col="name" label="Domain" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader col="assigned" label="Assigned to" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="w-36" />
+                <SortableHeader col="max_emails" label="Max emails" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="w-28 text-center" />
+                <SortableHeader col="max_forwards" label="Max forwards" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="w-28 text-center" />
+                <SortableHeader col="created" label="Created" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="w-36" />
+                <TableHead className="text-zinc-400 w-24 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {domains?.map((d) => (
+              {filtered.map((d) => (
                 <TableRow
                   key={d.id}
                   className="border-zinc-800 hover:bg-zinc-800/50"
@@ -566,6 +660,12 @@ export default function DomainsPage() {
             </TableBody>
           </Table>
         </div>
+        {filtered.length === 0 && searchQuery && (
+          <p className="text-center text-zinc-500 py-8">
+            No results for «{searchQuery}»
+          </p>
+        )}
+        </>
       )}
 
       <CreateDomainDialog
