@@ -406,7 +406,7 @@ export default function UsersPage() {
             <Skeleton key={i} className="h-12 bg-zinc-800 rounded" />
           ))}
         </div>
-      ) : (
+      ) : filtered.length > 0 ? (
         <div className="rounded-md border border-zinc-800 overflow-hidden">
           <Table>
             <TableHeader>
@@ -483,11 +483,12 @@ export default function UsersPage() {
             </TableBody>
           </Table>
         </div>
-      )}
-      {filtered.length === 0 && searchQuery && (
+      ) : searchQuery ? (
         <p className="text-center text-zinc-500 py-8">
           No results for «{searchQuery}»
         </p>
+      ) : (
+        <p className="text-center text-zinc-500 py-8">No users yet.</p>
       )}
 
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />

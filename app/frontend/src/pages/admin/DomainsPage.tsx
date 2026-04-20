@@ -518,8 +518,13 @@ export default function DomainsPage() {
           return sortDir === "asc" ? cmp : -cmp;
         }
         if (sortCol === "assigned") {
-          const av = a.user_id != null ? (userMap.get(a.user_id) ?? "") : "";
-          const bv = b.user_id != null ? (userMap.get(b.user_id) ?? "") : "";
+          const aNull = a.user_id == null;
+          const bNull = b.user_id == null;
+          if (aNull && bNull) return 0;
+          if (aNull) return 1;   // unassigned always goes to bottom
+          if (bNull) return -1;
+          const av = userMap.get(a.user_id!) ?? "";
+          const bv = userMap.get(b.user_id!) ?? "";
           const cmp = av.localeCompare(bv);
           return sortDir === "asc" ? cmp : -cmp;
         }
