@@ -80,6 +80,10 @@ v0.1.1 — <short summary of the session's changes>
 
 Keep bullets short and user-facing (what changed, not how). No filler phrases like "updated" or "refactored" — just state the change directly.
 
+### Shipping
+
+Run `scripts/ship.sh` to auto-generate a README changelog entry (via Claude), commit it, and push everything to GitHub in one step.
+
 ## Build Order
 
 1. Backend models + Alembic migration
