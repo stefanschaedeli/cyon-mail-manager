@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import log_action, require_admin
 from app.core.auth import hash_password
 from app.core.database import get_db
+from app.services.cyon import CyonService, get_cyon_service
 from app.models import AuditLog, Domain, EmailAccount, EmailForward, User
 from app.schemas import (
     AuditOut,
@@ -230,15 +231,14 @@ async def import_emails(
     domain_name: str,
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
+    cyon: Annotated[CyonService, Depends(get_cyon_service)],
 ):
     import asyncio
-    from app.services.cyon import get_cyon_service
 
     domain = db.query(Domain).filter(Domain.name == domain_name).first()
     if not domain:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain not found")
 
-    cyon = get_cyon_service()
     cyon_emails = await asyncio.to_thread(cyon.list_emails, domain_name)
 
     existing = {
@@ -273,15 +273,14 @@ async def import_forwards(
     domain_name: str,
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
+    cyon: Annotated[CyonService, Depends(get_cyon_service)],
 ):
     import asyncio
-    from app.services.cyon import get_cyon_service
 
     domain = db.query(Domain).filter(Domain.name == domain_name).first()
     if not domain:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain not found")
 
-    cyon = get_cyon_service()
     cyon_forwards = await asyncio.to_thread(cyon.list_forwards, domain_name)
 
     existing = {
